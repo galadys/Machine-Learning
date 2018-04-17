@@ -1,0 +1,250 @@
+---
+title: "First Exercise"
+author: "Lorenzo Meninato"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+1. Problem Statement:
+
+Do women earn less than men at academic institutions? If so, what factors account for the differences in pay. 
+
+2. Data:
+
+The Salaries dataset from the "car" package contains 2008-09 academic salary data for professors (assistant, associate, and full professors) for a single college in the US. Data was collected as part of the college's efforts to monitor salary differences between male and female professors. 
+
+3. Analysis:
+
+My analysis will primarily be Level 1 and Level 2. I think there will not be enough data to causally infer any relationships between variable, and further, I would not have the subject matter knowledge to adequately perform that type of causal inference. Still, I believe that from observing the summary statistics and univariate statistsics/plots (Level 1 analysis) I might be able to find appropriate models (or at least obtain useful informations from the wrong models we might use) for the statistical relationships between variable (Level 2 analysis). 
+
+4. Univariate statistics and plots:
+
+```{r}
+library(car)
+library(ggplot2)
+
+summary(Salaries)
+table(Salaries$sex, Salaries$rank)
+
+```
+
+
+There are a few concerns with the data. For starters, there is limited data on female professor salary (only 39 observations). This could be difficult to work with, especially since the main problem we are trying to resolve is the difference in salaries between females and males, ceteris paribus. Further, most professors are of the highest rank (266/397 observations), so if we group the sexes by rank and discipline, some group would have far too few observations. I also thought it would likely be that having both "years since phd" and "years of service" would be redundant and could lead to multicollinearity in later regressions. Statistics confirm this later. 
+At first glance, the subdivision of professors into applied and theoretical fields does not appear to be particularly useful, since it would likely be more fruitful to divide professors by what subject matter they teach, rather than if it is a theoretical or applied field. We would expect business professors to earn more than english professors, if outside market forces would pay the former more than the latter.
+
+
+```{r, results='asis', echo=FALSE}
+library(knitr)
+
+kable(aggregate(yrs.service ~ rank, Salaries, mean), caption = "1: Average years of service by rank")
+kable(aggregate(Salaries$salary ~ (sex + rank), Salaries, median), caption = "2: Median salaries by sex and rank")
+kable(aggregate(yrs.since.phd ~ rank, Salaries, mean), caption ="3: Average years since PhD by rank")
+kable(aggregate(salary ~ (discipline+sex), Salaries, median), caption = "4: Median salary by sex and discipline")
+```
+
+
+The first table is not surprising. The higher the rank of the professor, the more years they have been working at the college. The second table might confirm the college administrators suspicions that female professors were underpaid relative to their male peers. At every rank, female professors have a lower median salary than their male colleagues. However, this difference might be accounted for in differences in experience ("years since phd") or discipline. Further, the fourth table suggests that applied disciplines tend to pay more than theoretical differences, by a median difference of about \$9000. When subdividing the disciplines by sex, the median salary for females in theoretical fields is nearly \$30000 less than in applied fields (\$8000 difference). But again, there is no reason to believe this is statistical evidence of gender pay discrimination. 
+
+
+
+```{r, echo=FALSE}
+ggplot(Salaries, aes(salary))+
+  geom_histogram(col="red", fill ="grey25", binwidth = 5000)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Salary Histogram")
+ggplot(Salaries, aes(yrs.service))+
+  geom_histogram(col="red", fill ="grey25", binwidth = 1)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Years of Service Histogram")
+ggplot(Salaries, aes(yrs.since.phd))+
+  geom_histogram(col="red", fill ="grey25", binwidth = 1)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Years since PhD Histogram")
+```
+
+
+The salary distrbution is positively skewed. There seems to be certain clusters of salaries around certain pricepoints (\$75k, \$90k and \$105k). If there is a bias for administrators to pay amounts near certain round numbers, this could effect regression results later.
+The "years since phd" data is a lot less right skewed than the years of service data. This could have been caused by the college hiring professors with prior experience.
+
+5. Bivariate analysis:
+
+
+```{r, echo=FALSE}
+ggplot(Salaries, aes(yrs.service, fill=sex))+
+  geom_histogram(position = "identity", colour ="grey40", binwidth = 1)+
+  facet_grid(sex ~ .)+
+  labs(title="Years of service for male and female professors")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(x="Years of Service", y="Count")
+
+ggplot(Salaries, aes(yrs.since.phd, fill=sex))+
+  geom_histogram(position = "identity", colour ="grey40", binwidth = 1)+
+  facet_grid(sex ~ .)+
+  labs(title="Years since PhD for male and female professors")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(x="Years since PhD", y="Count")
+```
+
+
+Histograms of "years since phd" and "years of service" visually suggest that the two variables are highly correlated. I think that it would be preferable to exclude "years of service" in a future report, since professors that have been researchers for many years at other schools would have less years of service, but likely could demand high salaries, since they have done much work since their PhD. 
+Further, especially at the tail-end of these distributions, we can see that there is much less data for females beyond 25-30 years of experience. 
+The histogram for female professors (for "years since phd"), is also nearly uniformly distributed, which we would not expect.
+
+
+
+```{r,echo=FALSE}
+ggplot(Salaries, aes(salary, fill=sex))+
+  geom_histogram(position = "identity", col="grey40", binwidth = 5000)+
+  facet_grid(sex ~ .)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Salary Histogram")
+```
+
+
+For females there is little data between \$75k and \$100k, with salaries tending to be clustered around those two boundaries. There could be a reason for this bimodal distribution. We do knot know why this is the case.
+
+
+```{r,echo=FALSE}
+ggplot(Salaries
+       ,aes(y = Salaries$salary, x = Salaries$rank)) + 
+  geom_violin() +
+  xlab("Rank") +
+  ylab("Salary") +
+  ggtitle("Salary Across Ranks")
+```
+
+
+For the violin plot ("Salary across ranks"), note how the distribution of salaries is skewed right for assistant professors and full professors while it is skewed left for associate professors. This might be explained by the fact that assistant professors are more readily promoted to associate professor, and thus earn more, while associate professors might increase their salary over a longer period of time but would not be so easily promoted to full professor.
+
+
+```{r, echo=FALSE}
+ggplot(Salaries, aes(yrs.service,salary)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)+
+  xlab("Years of Service") +
+  ylab("Salary") +
+  ggtitle("Relationship Between Years of Service and Salary")
+```
+ 
+ 
+ 
+According the scatterplot ("Relationship between years of service and salary"), we see a weak positive correlation between the two variables. How linear their relationship is is unclear.
+
+
+
+```{r, echo=FALSE}
+ggplot(Salaries, aes(yrs.service,salary)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~rank, scales="free") +
+  xlab("Years of Service") +
+  ylab("Salary") +
+  ggtitle("Relationship Between Years of Service and Salary")
+```
+
+
+
+For more expereienced professors, having worked at the college longer does not seem to positively correlate with a higher salary. This might be because professors are not negotiating with other colleges for higher, more competitive salaries if they have worked at the same college for so long. And this cannot be the case for assistant professors that are probably much younger. 
+
+
+
+```{r,echo=FALSE}
+ggplot(Salaries, aes(yrs.since.phd,salary)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)+
+  xlab("Years since PhD") +
+  ylab("Salary") +
+  ggtitle("Relationship Between Years since PhD and Salary")
+```
+
+
+Using "years since PhD" we obtain similar results. 
+
+```{r,echo=FALSE}
+ggplot(Salaries, aes(yrs.since.phd,salary)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~rank, scales="free") +
+  xlab("Years since PhD") +
+  ylab("Salary") +
+  ggtitle("Relationship Between Years since PhD and Salary")
+```
+
+
+Here we see a near-zero or even negative relationship between "years since phd" and "salary", when salaries are subdivided by rank. This result is fairly surprising. At least for the two lesser ranks, it might be that professors that are not promoted to full professors relatively soon after obtaining their PhD are less desirable, thus are paid less. 
+
+
+
+```{r,echo=FALSE}
+ggplot(Salaries, aes(y=salary, x = discipline)) + 
+  geom_violin() + 
+  xlab("Discipline") +
+  ylab("Salary") +
+  ggtitle("Relationship Discipline and Salary")
+
+```
+
+
+The applied discipline appears to have a slightly more right skewed distribution than its theoretical counterpart. This could be because of a few influential observations. For instance, certain fields like statistics and computer science are heavily desired by industry, so professors in those fields could demand a higher salary.
+
+
+```{r}
+salarydata = Salaries[, c(3,4,6)]
+cor(salarydata)
+```
+
+
+For our quantitative variables, we can see that "years of service" and "years since phd" are highly correlated as expected.
+
+6. Training and test data:
+
+
+```{r}
+Index<-sample(1:397,80, replace=FALSE)
+Test <- Salaries[Index,]
+Train <- Salaries[-Index,]
+```
+
+
+7. Linear regression:
+
+
+```{r}
+out1 <- lm(salary ~ ., data = Train)
+summary(out1)
+par(mfrow=c(2,2))
+plot(out1)
+vif(out1)
+#hccm(out1)
+#sqrt(hccm(out1))
+```
+
+
+The variance inflation factors do suggest that "years since phd" and "years of service" are multicollinear, as I suspected earlier. The quality of the fit is not great. Our adjusted R-squared value is 0.45. Examining the plot of residuals versus fitted points we see several outliers and heteroskedasticity. The normal Q-Q plot is decent for many observations, but again, the fit is not great. 
+
+Certain categorical variables are ommitted to prevent multicollinearity.
+
+
+```{r}
+Preds1<-predict(out1,newdata=Test)
+plot(Preds1, Test$salary, xlab = "Predicted Salary", ylab = "Test Salary", main = "Predicted Salary vs Test Salary")
+abline(0,1,col="red")
+```
+
+Here I applied the linear regression model from the training data onto the test data. We can see that the fit is not great. The same problem of heteroskedasticity remains. 
+
+8. Regression Results: 
+
+At a level 2 level, from our regression results we can infer that if a professor's sex is male instead of female, we would expect an increase in salary of \$3000 dollars. However, this result is not statistically significant. Without a different regression technique or analysis we could not say otherwise. This is different from what we could have inferred from our Level 1 analysis of the differences in salaries across groups. 
+Further, the results of the regression suggest that only the rank and discipline of a professor matter (statistically, from this model's perspective). 
+
+9. Conclusions:
+
+A preliminary statistical analysis of the Salaries dataset finds that their is no statistical evidence for gender pay discrimination. We can  conclude, with some confidence, that professor rank and discipline (applied vs theoretical) do affect professor salary. However, especially with respect to the overarching problem of gender pay discrimination, these results should be taken lightly since there are few observation for female professor salaries, the inclusion of both "years since phd" and "years of service" likely are causing multicollinearity, and it would probably be more fruitful to divide professor disciplines into subject matters, rather than a "theoretical vs applied" framework. 
+
+
