@@ -1,0 +1,106 @@
+---
+title: "Assignment 2 Notes"
+output: html_notebook
+---
+Do "illegitimate" factors, such as gender, race, ethnicity, and nationality, have a substantial impact on whether or not defendants of capital crimes are charged with the death penalty? If these factors do have an impact, how much of an impact do they have, and which factors have the largest impact? This question would be of policy interest to various parties, such as lawmakers, politicians, and social justice organizations. 
+
+In the United States, there is both a state criminal justice system and a federal criminal system. The data come from the federal system during the Clinton Administration (1993-2001), and includes all homicide cases for which it was legally permitted to seek the death penalty. The data were collected to consider federal death penalty charging practices with the goal of possible subsequent reform. 
+
+```{r echo=FALSE}
+library(rpart)
+library(rpart.plot)
+
+load("~/R/MLDeathPenalty.rdata") #loading dataset
+
+summary(DeathPenalty)
+copy = na.omit(DeathPenalty)
+```
+
+```{r echo=TRUE}
+require(Amelia)
+missmap(DeathPenalty, main="Death Penalty Data - Missings Map", col=c("red", "green"),
+        legend=FALSE)
+```
+
+Figure 1 shows that there are many missing observations. In particular, many observations are missing for whether or not a vehicle was involved (188), and a few observations are missing many characteristics, from the victims race, to details about the crime. In terms of my pre-emptive data manipulations, I have to consider the trade-off between removing many observations, and thus reducing my sample size, and introducing bias through working with an incomplete dataset. Either way some statistical power will be lost, but I will try to strike a balance between bias and statistical power. Since I am regressing death on various factors, it makes little sense to include observations for which whether or not the defendant was killed is a missing observations (occurrs in 23 cases). Further, for the key factors central to my research questions, such as gender, race, and education, if those factors are missing, the statistical analysis will be less capable of answering the question of how those factors impact the probability of a death penalty sentence. Jointly, there are only 34 rows that are missing any of those factors I deem "key" to answering the research question. Thus I can still analyze how those factors impact death sentence probability with a dataset of 635 observations, only 34 observations less than the original dataset of 669 observations. I considered using more advanced data imputation techniques, such as considering the values of neighboring observations, and imputing the averaged values onto the missing points, but since my dataset is still quite large after removing those observations, I felt this would only artificially reduce variance, and increase the bias of my results. Even more advanced techniques like multiple imputation methods from the "mice" library would still introduce this problem. However, completely removing all observations with any missing data would have shrunk my dataset to two-thirds the size. This seemed like another extreme that would have reduced the statistical power of the data. Since the dataset is not that large, this did not seem appropriate. However, I still have a significant number of missing observations for other variables, fortunately, many of the missing observations are clustered within the same row, so I can remove the rows containing these missing values without decimating the dataset.
+
+My compromise is to completely remove the vehicle column, then omit any rows with missing values. Even if I were to impute in the missing values for the vehicle column, this would not be recommended since there are so many missing observations. I only lose 74 observations doing this, and then I do not have to worry about handling missing data within CART. It is generally better to allow cART to handle missing data if data appears to be completely at random (for evidence of this, note how in Figure 1 there are long horizontal lines, and the missing observations are clustered around the middle. The missing data for the vehicle column appear to be fairly random.), but judging from my missing data maps this does not seem to be the case. So in this case, imputing over so many observations will likely fail (inconveniently this is when this would be most useful). If there were fewer missing observations, imputation would be a better approach. Thus using surrogate variables would likely lead to an unreliable correspondence between the results and the data. 
+
+In summary, I will attempt to resolve the missing data issue by dropping the vehicle column, and then removing all rows with missing observations. 
+
+```{r echo=TRUE}
+copyDP = DeathPenalty
+copyDP = subset(copyDP, select = -c(vehicle))
+copyDP = na.omit(copyDP)
+missmap(copyDP, main="Death Penalty Data - Missings Map", col=c("red", "green"),
+        legend=FALSE)
+copyDP$education = as.factor(copyDP$education)
+levels(copyDP$education) = c("HS Degree", "No degree", "Other")
+```
+Our new dataset now contains no missing observations. Further, since our dataset contains 30 variables, 1 of which is a tertiary variable (education), I have to codify it as a factor variable in R, otherwise the CART algorithm might treat it is a continuous variable, and the arbitrary divisions between the factor levels would no longer be arbitrary (So coding no education as a 2 rather than a 5, for instance, would yield different results. This is of course undesired.). The other variables are either binary or numeric (number of victims). This is checked to guarantee that binary variables are not treated as continuous when I apply the algorithm (see appendix for code). If this were not checked, the results would be more tenuous. 
+
+UNIVARIATE ANALYSIS
+
+```{r echo=TRUE, warnings = FALSE}
+library(ggplot2)
+
+ggplot(copyDP, aes(numbervictim))+
+  geom_histogram(col="grey", fill ="grey65")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Number of Victims")
+```
+
+
+As a sanity-check, we can see that the number of victims is always at least 1 (it would not make sense for there to exist crimes without victims). Unsurprisingly there is a right-skewed distribution of the number of victims. It will be interesting to see how the number of victims impact the probability of death penalty sentence in the bivariate statistics analysis. For instance, we could see that each additional victim increases the death sentence probability, or it is possible that there is no relationship. If there is a relationship, we would expect this to be communicated in the results of the regression tree. 
+
+```{r echo=TRUE, warnings = FALSE}
+ggplot(copyDP, aes(education))+
+  geom_bar()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Education")
+```
+
+Most of the crimes were committed by fairly uneducated people. Only about a third of defendants had at least a high school degree. There does seem to be a significant amount of uncertainty about this however, since over half the observations had an unknown level of education. This might be important in terms of determining splits in the regression trees, since splits based on education might be highly uncertain, since so much of the data is weighted towards the unknown factor level. Although I am no expert in the relevant subject-matter, but one could hypothesize that more educated suspected murderers could face more lenient sentences at greater rates since the jury might find them more capable of re-integrating into society. Of course, perhaps there is an even stronger counterargument that a marginalized individual who had a very poor education should be treated more leniently, precisely because the systemic disadvantage such an individual would have faced. This could have given key insights into whether education influences sentences or not. Either way, going forward I must take into consideration the uncertainty embedded in this variable. 
+
+The majority of capital crimes were committed by men (574 vs. 21 observations) and about 24% of crimes overall received the death sentence. The racial composition of the defendants skewed towards black (48%) and hispanic (27%) ethnicities. Further, it will be interesting to see how sentencing is impacted by differences in ethnicity between the perpetrator and the victim. There were more female victims (15%) than female perpetrators (3.5%). It will be interesting to see if a man killing a woman results in more severe punishment than otherwise. All the proportions are listed in the figure (code is in the appendix).
+
+BIVARIATE ANALYSIS
+
+```{r echo=TRUE, warnings = FALSE}
+ggplot(factorCopy, aes(educationDeath))+
+  geom_bar(col="grey", fill ="grey65")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Education versus Death Sentence")
+```
+
+There do not seem to be any clear trends with respect to the relationship between death sentence probability and education. The proportions confirm this: 31.8% HS degree,  29.5% no HS degree, 19.7% other. The death sentence probability does seem to be statistically signifanctly less for those with an unknown education, thus having had better data the results might be able to be much stronger. 
+
+```{r}
+ggplot(factorCopy, aes(numbervictimDeath))+
+  geom_bar(col="grey", fill ="grey65")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title="Number of Victims versus Death Sentence")
+```
+
+A Level I analysis reveals that the number of victims per crime does have a significant effect on the probability of a death sentence. I can then quickly compute the an estimate of the death penalty sentence probability based on the number of victims. As expected, the linear regression line trends upwards, so the more victims, the greater the chance of a death sentence. 
+
+```{r}
+factorCopy$numbervictimDeath2 = with(factorCopy, interaction(factorCopy$death, factorCopy$numbervictim))
+nvictimDeathProb = c(79/(312+79), 21/(65+21), 22/(41+22), 3/(2+3), 5/(9+5), 6/6, 3/(4+3), 3/(6+3), 7/(3+7), 5/(5+1))
+victimcount = c(1,2,3,4,5,6,7,9,10,14)
+plot(victimcount, nvictimDeathProb, pch = 16, main = "Victim Count versus Death Sentence Probability", xlab = "Victim Count", ylab = "Death Sentence Frequency")
+abline(lm(nvictimDeathProb ~ victimcount))
+```
+
+Examining the relationships between the race and death sentence probability, I find that a cursory glance at the summary statistics (code available in the appendix (necessary to combine variables in certain ways to table data)) finds that over 56 observations, 39% of black defendants with white victims received the death penalty, while over 232 observations only 19.8% of black defendants with crimes against non-whites received the death penalty. This difference could provide substantial evidence that illegitimate factors do play a role death penalty sentences. Interestingly, I do not find a similar result crimes committed against whites by hispanics (about 11% more death sentences granted for hispanic chrimes against non white victims). For crimes by whites against whites, about 37% of defendants were granted the death penalty, while in 9 cases of white crimes against non-white victims, only 22% of defendants were granted the death penalty. In summary, only the data of black-on-white crime appears to support the hypothesize that blacks were granted the death penalty at greater frequencies. 
+
+Due the inherent complexity in a dataset with so many variables, it is pointless to try understand all the possible interactions between variables. In fact, because of that complexity, machine learning algorithms will quite possibly be more useful than conventional statistical techinques. So certain variables that I have not analyzed more thoroughly, like the "before killing" variables, gun and store variables, etc. might end up playing a larger role than an initial Level I analysis might imply. This is might only be possible in an algorithmic sense, since even simply thinking about all the possible covariances and correlations between 30 or more variables would consume an inordinate amount of a researcher's time. 
+
+It would be prudent to consider the possible risks of overfitting the data to the model. By separating our dataset into training and test data we can check for overfitting by running the test data through the outputted regression tree. One possibility for reducing overfitting is to increase the cost complexity of the CART model. The penalty for complexity is a function of the number of terminal nodes in the model. However, the bias-variance tradeoff reappears under the true model perspective (when operating at Level II analysis). Larger trees will have fewer classification errors, which implies less bias, but the same tree will have fewer cases to check, and thus more tree instability, thus a greater variance. I can tweak the $cp$ parameter when minimizing $R_{cp} (T) \equiv R(T) + cp*|T|*R(T_1)$ to find a suitable trade-off between bias and variance. 
+
+However, before implementing the CART model, I must justify the use of statistical inference with CART. For operating at a Level II analysis, the key assumption is that the data are realized from a join probability distribution of subject-matter interest, where $Y$ and $X$ are random variables. As discussed in Chapter 1 of the text, this is rarely possible, instead we can treat CART as an attempt to estimate an approximation of the true response surface. While the data does cover all cases where it was legal to seek the death penalty, in which case we would expect the data to be drawn from the appropriate distribution, the nature of the data is that it is quite sparse, since at best there are about 670 observations, and after splitting the data into training, evaluation, and test data, statistical inference would be quite limited. But apart from the various limitations, I can still tentatively proceed with a Level II analysis. 
+
+CART MODEL
+I use the Gini classification loss function since the entropy function is more computationally intensive and I did not receive better results by using it. 
+
+
